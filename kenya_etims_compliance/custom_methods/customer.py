@@ -1,0 +1,71 @@
+import frappe
+import requests
+from frappe import _
+
+from kenya_etims_compliance.utils.kra_client import KRAClient
+
+
+@frappe.whitelist()
+def check_pin_with_kra(pin):
+	"""Validate a KRA PIN via the developer.go.ke PIN Checker by PIN API.
+
+	Validates against the full KRA iTax taxpayer registry (not branch-scoped).
+
+	Returns:
+	    {"found": True, "data": {pin, name, type, status}}
+	    {"found": False, "message": "..."}
+	"""
+	from kenya_etims_compliance.utils.pin_checker import check_pin
+
+	result = check_pin(pin)
+
+	if result.get("valid"):
+		d = result["data"]
+		return {
+			"found": True,
+			"data": {
+				"taxpayer_pin": d.get("KRAPIN"),
+				"taxpayer_name": d.get("Name"),
+				"taxpayer_type": d.get("TypeOfTaxpayer"),
+				"status_of_pin": d.get("StatusOfPIN"),
+			},
+		}
+
+	return {"found": False, "message": result.get("message"), "code": result.get("code")}
+
+
+@frappe.whitelist()
+def bhfCustSaveReq(doc_name):
+	item = frappe.get_doc("Customer", doc_name)
+
+	customer = {
+		"custNo": item.get("custom_customer_number"),
+		"custTin": item.get("tax_id"),
+		"custNm": item.get("custom_customer_name"),
+		"adrs": item.get("custom_address"),
+		"telNo": item.get("custom_contact"),
+		"email": item.get("custom_email"),
+		"faxNo": item.get("custom_fax_number"),
+		"useYn": item.get("custom_used_yn"),
+		"remark": item.get("custom_remark"),
+		"regrId": item.get("custom_registration_id"),
+		"regrNm": item.get("custom_registration_name"),
+		"modrId": item.get("custom_modifier_id"),
+		"modrNm": item.get("custom_modifier_name"),
+	}
+
+	try:
+		result = KRAClient().post("saveBhfCustomer", customer)
+
+		if result.get("Error"):
+			frappe.logger().debug("Customer registration error: {0}".format(result.get("Error")))
+			return {"Error": result.get("Error")}
+
+		item.custom_is_registered = 1
+		item.save()
+
+		return {"Success": result.get("Success")}
+
+	except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+		frappe.log_error("eTIMS: Customer registration error", str(e))
+		return {"Error": "Oops Bad Request!"}

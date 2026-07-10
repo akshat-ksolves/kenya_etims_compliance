@@ -1,0 +1,975 @@
+import traceback  # pyqrcode
+from datetime import datetime, time, timedelta
+
+import frappe
+import requests
+import segno
+from frappe import _
+from frappe.utils import flt
+
+from kenya_etims_compliance.custom_methods.queue_processor import enqueue_invoice
+from kenya_etims_compliance.custom_methods.receipt_labels import get_receipt_label
+from kenya_etims_compliance.kenya_etims_compliance.doctype.etims_settings.etims_settings import (
+	get_etims_settings,
+)
+from kenya_etims_compliance.utils.etims_utils import (
+	KRA_TAX_BANDS,
+	NON_VAT_CODE,
+	apply_tax_bands,
+	eTIMS,
+	get_next_sar_number,
+	get_org_sar_number,
+)
+from kenya_etims_compliance.utils.kra_client import KRAClient
+
+
+@frappe.whitelist()
+def searchSalesTrnsReq(invoice_no=None, last_req_dt=None):
+	"""Search sales transactions in eTIMS"""
+	response = eTIMS.searchTrns(invoice_no, last_req_dt, "sales")
+
+	for key, value in response.items():
+		if key == "Success":
+			return {"Success": value}
+		else:
+			return {"Error": value}
+
+
+@frappe.whitelist()
+def selectSalesTrnsInfoReq(invoice_no):
+	"""Get sales transaction details from eTIMS"""
+	response = eTIMS.selectTrnsSalesInfo(invoice_no)
+
+	for key, value in response.items():
+		if key == "Success":
+			return {"Success": value}
+		else:
+			return {"Error": value}
+
+
+def show_etims_queued_message(doc, method):
+	"""on_submit hook — show the "queued" msgprint only if submit actually succeeded.
+
+	Runs after ERPNext's submit logic (incl. GL posting and fiscal year check).
+	If anything in the submit chain failed earlier, this hook never runs and
+	the misleading "queued" message is never shown.
+	"""
+	if frappe.flags.get("_etims_show_queued_msg"):
+		frappe.msgprint(_("Sales invoice queued for eTIMS submission"), indicator="blue")
+		frappe.flags._etims_show_queued_msg = False
+
+
+def validate(doc, method):
+	"""
+	Method validate invoice number before submitting invoice
+	"""
+	# Auto-enable eTIMS signing from POS Profile (server-side fallback)
+	if doc.pos_profile and not doc.custom_update_invoice_in_tims:
+		enable_etims = frappe.db.get_value("POS Profile", doc.pos_profile, "custom_enable_etims_signing")
+		if enable_etims:
+			doc.custom_update_invoice_in_tims = 1
+
+	if doc.custom_invoice_number and doc.name:
+		doc_exists = frappe.db.exists("Sales Invoice", {"name": doc.name})
+
+		if doc_exists:
+			if doc.custom_update_invoice_in_tims:
+				invoice_numbers = validate_inv_number(doc)
+
+				if doc.custom_invoice_number in invoice_numbers:
+					# Collision safety net: clear the number so the assign-once
+					# guard in insert_invoice_number reallocates a fresh one.
+					doc.custom_invoice_number = None
+					insert_invoice_number(doc, method)
+
+
+def insert_invoice_number(doc, method):
+	"""
+	Method sets increment for invoice number and orginal invoice number before submitting invoice
+	"""
+	if not doc.items:
+		frappe.throw(_("Sales Invoice must have at least one item to submit to eTIMS"))
+
+	scu = ""
+	sales_warehouse = ""
+	item_count = 0
+	if doc.name and doc.custom_update_invoice_in_tims:
+		branch_id = eTIMS.get_user_branch_id()
+		init_docs = frappe.db.get_all(
+			"TIS Device Initialization",
+			filters={"branch_id": branch_id},
+			fields=["sales_control_unit_id", "default_sales_warehouse"],
+		)
+
+		if init_docs:
+			scu = init_docs[0].get("sales_control_unit_id")
+			sales_warehouse = init_docs[0].get("default_sales_warehouse")
+
+		if doc.items:
+			item_count = len(doc.items)
+			insert_tax_amounts(doc)
+
+		total_discount_amount = get_total_discount(doc)
+
+		total_vat_amount = fetch_total_vat(doc)
+		total_non_vat_amount = fetch_total_non_vat(doc)
+
+		# Assign the eTIMS invoice number ONCE. Re-deriving it on every save lets
+		# the stored invcNo drift after transmission (the post-success doc.save()
+		# re-fires on_update). Keep an already-assigned number; only allocate a
+		# new one when none exists. Tax amounts/totals below still recompute.
+		last_inv_number = doc.custom_invoice_number or get_last_inv_number(doc, branch_id)
+
+		# update_stock decision: respect the user's choice, auto-disable when
+		# enabling it would technically fail, warn when leaving it off risks
+		# KRA stock-register reconciliation.
+		user_choice = 1 if doc.get("update_stock") else 0
+
+		has_dn_link = any(it.get("delivery_note") or it.get("dn_detail") for it in (doc.items or []))
+		has_stock_item = False
+		if doc.items:
+			item_codes = [it.item_code for it in doc.items if it.item_code]
+			if item_codes:
+				stocked = frappe.db.get_all(
+					"Item",
+					filters={"item_code": ["in", item_codes], "is_stock_item": 1},
+					fields=["name"],
+					limit=1,
+				)
+				has_stock_item = bool(stocked)
+
+		new_update_stock = user_choice
+		if user_choice == 1 and has_dn_link:
+			new_update_stock = 0
+			frappe.msgprint(
+				_("Auto-disabled 'Update Stock' on this invoice because it links to a Delivery Note. "
+				  "Stock was already booked by the DN — eTIMS will receive the stock movement from there."),
+				title=_("Update Stock disabled"), indicator="orange",
+			)
+		elif user_choice == 1 and not has_stock_item:
+			new_update_stock = 0
+			frappe.msgprint(
+				_("Auto-disabled 'Update Stock' on this invoice because none of the items are stock items "
+				  "(all are services). No stock movement to send."),
+				title=_("Update Stock disabled"), indicator="orange",
+			)
+		elif user_choice == 0 and has_stock_item and not has_dn_link:
+			frappe.msgprint(
+				_("'Update Stock' is OFF on this invoice but items include stock items. "
+				  "KRA's stock register will not receive a stock-out movement, which may cause reconciliation "
+				  "mismatches. Either enable Update Stock or send a separate stock movement."),
+				title=_("KRA stock reconciliation risk"), indicator="yellow",
+			)
+
+		update_dict = {
+			"custom_invoice_number": last_inv_number,
+			"custom_sales_control_unit": scu,
+			"update_stock": new_update_stock,
+			"custom_tax_branch_office": branch_id,
+			"custom_total_taxable_amount": total_vat_amount,
+			"custom_total_nontaxable_amount": total_non_vat_amount,
+			"custom_item_count": item_count,
+			"custom_total_discount_amount": total_discount_amount,
+			"custom_total_before_discount": total_discount_amount + doc.base_grand_total,
+		}
+		if new_update_stock and sales_warehouse:
+			update_dict["set_warehouse"] = sales_warehouse
+
+		frappe.db.set_value("Sales Invoice", doc.name, update_dict, update_modified=False)
+
+		# Sync in-memory doc fields to match what was written to DB
+		doc.custom_invoice_number = last_inv_number
+		doc.custom_sales_control_unit = scu
+		doc.update_stock = new_update_stock
+		if new_update_stock and sales_warehouse:
+			doc.set_warehouse = sales_warehouse
+		doc.custom_tax_branch_office = branch_id
+		doc.custom_total_taxable_amount = total_vat_amount
+		doc.custom_total_nontaxable_amount = total_non_vat_amount
+		doc.custom_item_count = item_count
+		doc.custom_total_discount_amount = total_discount_amount
+		doc.custom_total_before_discount = total_discount_amount + doc.base_grand_total
+
+
+def insert_tax_amounts(doc):
+	if doc.items:
+		taxable_amounts = get_taxable_amounts(doc)
+		for key, value in taxable_amounts.items():
+			try:
+				if doc.taxes:
+					for item in doc.taxes:
+						if item.get("custom_code") == key:
+							tax_templates = frappe.db.get_all(
+								"Item Tax Template", filters={"custom_code": key}, fields=["custom_code_name"]
+							)
+
+							if len(tax_templates):
+								frappe.db.set_value(
+									"Sales Taxes and Charges",
+									item.get("name"),
+									{
+										"custom_total_taxable_amount": round(value, 2),
+										"custom_code_name": tax_templates[0].get("custom_code_name"),
+									},
+									update_modified=False,
+								)
+								# Sync in-memory child row to match DB write
+								item.custom_total_taxable_amount = round(value, 2)
+								item.custom_code_name = tax_templates[0].get("custom_code_name")
+			except (frappe.DoesNotExistError, frappe.DataError) as e:
+				frappe.throw(_("Error calculating tax amounts: {0}").format(str(e)))
+
+
+def get_total_discount(doc):
+	discount_amount = 0
+
+	if doc.items:
+		for item in doc.items:
+			if item.get("discount_percentage") > 0:
+				total_dsc = item.get("custom_discount_amount_kes") * item.get("qty")
+				discount_amount += total_dsc
+
+	return discount_amount
+
+
+def get_taxable_amounts(doc):
+	taxable_amounts_dict = {}
+
+	try:
+		if doc.items:
+			for item in doc.items:
+				if item.get("custom_tax_code") not in taxable_amounts_dict.keys():
+					taxable_amounts_dict[item.get("custom_tax_code")] = 0
+
+				taxable_amounts_dict[item.get("custom_tax_code")] += item.base_net_amount
+	except Exception as e:
+		frappe.throw(_("Error getting taxable amounts: {0}").format(str(e)))
+
+	return taxable_amounts_dict
+
+
+def fetch_total_vat(doc):
+	taxable_amount = 0
+	if doc.taxes:
+		for item in doc.taxes:
+			if item.get("base_tax_amount_after_discount_amount") > 0:
+				taxable_amount += item.get("custom_total_taxable_amount")
+			if item.get("base_tax_amount_after_discount_amount") < 0 and doc.is_return:
+				taxable_amount += item.get("custom_total_taxable_amount")
+
+	return taxable_amount
+
+
+def fetch_total_non_vat(doc):
+	taxable_non_vat_amount = 0
+	if doc.taxes:
+		for item in doc.taxes:
+			if item.get("base_tax_amount_after_discount_amount") == 0:
+				taxable_non_vat_amount += item.get("custom_total_taxable_amount")
+
+	return taxable_non_vat_amount
+
+
+def trnsSalesSaveWrReq(doc, method):
+	"""
+	Method that collects sales information and updates it to tims server.
+	Called during before_submit — assigns invoice number first, then sends to eTIMS.
+	"""
+	if doc.custom_update_invoice_in_tims:
+		# Build the KRA payload via the shared builder (it also applies the tax
+		# bands, return fields, training-mode override and receipt label).
+		payload = build_sales_payload(doc)
+		settings = get_etims_settings()
+
+		if settings.get("enable_queue", 1):
+			branch_id = None
+			try:
+				branch_id = KRAClient()._get_user_branch_id()
+			except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+				frappe.log_error("eTIMS: Failed to get branch ID", str(e))
+
+			enqueue_invoice(
+				doc=doc,
+				payload=payload,
+				api_endpoint="save_sales",
+				branch_id=branch_id,
+			)
+			# Defer the msgprint until after the submit transaction commits.
+			# If submit later fails (e.g., fiscal year missing), the queue insert
+			# rolls back and this message must NOT appear.
+			frappe.flags._etims_show_queued_msg = True
+		else:
+			# Synchronous fallback (original behavior)
+			try:
+				client = KRAClient()
+				result = client.save_sales(payload)
+
+				if "Error" in result:
+					frappe.throw(result["Error"])
+
+				data = result["Success"]
+				control_unit_date_time = eTIMS.strp_datetime_object(data.get("sdcDateTime"))
+				control_unit_date = eTIMS.strp_date_object(data.get("sdcDateTime")[0:8])
+				control_unit_time = eTIMS.strp_time_object(data.get("sdcDateTime")[8:14])
+
+				doc.custom_current_receipt_number = data.get("curRcptNo")
+				doc.custom_total_receipt_number = data.get("totRcptNo")
+				doc.custom_internal_data = data.get("intrlData")
+				doc.custom_receipt_signature = data.get("rcptSign")
+				doc.custom_control_unit_date_time = control_unit_date_time
+				doc.custom_control_unit_date = control_unit_date
+				doc.custom_control_unit_time = control_unit_time
+
+				file_name, qr_url = create_qr_code(
+					client.headers.get("tin"), client.headers.get("bhfId"), data.get("rcptSign")
+				)
+				attachment_url = create_attachment(file_name, doc.name)
+
+				doc.custom_receipt_qr_code = attachment_url
+				doc.custom_receipt_qr_url = qr_url
+
+				create_sales_receipt(data, doc.name)
+				stockIOSaveReq(doc, eTIMS.strf_date_object(doc.posting_date))
+				doc.custom_update_sales_to_etims = 1
+
+				frappe.msgprint(_("Sales invoice synced to eTIMS successfully"))
+
+			except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+				frappe.log_error(title="eTIMS Sales Invoice Error", message=traceback.format_exc())
+				frappe.throw(_("eTIMS Error: {0}").format(e))
+	else:
+		return
+
+
+def stockIOSaveReq(doc, date_str):
+	taxAmt = 0
+	taxblAmt = 0
+	if doc.custom_update_invoice_in_tims:
+		stock_list = etims_sale_item_list_stock(doc)
+		if len(stock_list):
+			for item in doc.items:
+				if item.get("custom_maintain_stock") == 1 and item.get("custom_tax_code") in ["B", "E"]:
+					taxblAmt += item.get("base_net_amount")
+					taxAmt += item.get("base_amount") - item.get("base_net_amount")
+
+			payload = {
+				"sarNo": get_next_sar_number(doc, doc.custom_tax_branch_office),
+				"orgSarNo": get_org_sar_number(doc),
+				"regTyCd": "A",
+				"custTin": doc.tax_id,
+				"custNm": doc.customer,
+				"custBhfId": "",
+				"ocrnDt": date_str,
+				"totItemCnt": len(stock_list),
+				"totTaxblAmt": abs(round(taxblAmt, 2)),
+				"totTaxAmt": abs(round(taxAmt, 2)),
+				"totAmt": abs(doc.base_grand_total),
+				"remark": doc.remarks,
+				"regrId": (doc.owner or "")[:20],
+				"regrNm": (doc.owner or "")[:20],
+				"modrId": (doc.modified_by or "")[:20],
+				"modrNm": (doc.modified_by or "")[:20],
+				"itemList": stock_list,
+			}
+
+			if doc.is_return == 1:
+				return_status = sales_return_information(doc)
+
+				if return_status == "partial" or return_status == "full":
+					payload["sarTyCd"] = "03"
+
+				elif return_status == "null":
+					frappe.throw(_("Invalid, return amount is greater than original amount!"))
+
+			else:
+				payload["sarTyCd"] = "11"
+
+			if doc.custom_update_invoice_in_tims:
+				try:
+					frappe.logger().debug("Stock IO payload: {0}".format(payload))
+					client = KRAClient()
+					result = client.insert_stock_io(payload)
+
+					if "Error" in result:
+						frappe.throw(result["Error"])
+
+					frappe.msgprint(_("Stock IO synced to eTIMS successfully"))
+
+				except requests.Timeout:
+					frappe.log_error(
+						title="eTIMS Stock IO Timeout", message=f"Stock IO for {doc.name} timed out"
+					)
+					frappe.throw(_("eTIMS stock I/O timed out."))
+				except requests.ConnectionError:
+					frappe.log_error(title="eTIMS Stock IO Connection Error", message=traceback.format_exc())
+					frappe.throw(_("Cannot connect to eTIMS for stock I/O."))
+				except (requests.HTTPError, frappe.ValidationError) as e:
+					frappe.log_error(title="eTIMS Stock IO Error", message=traceback.format_exc())
+					frappe.throw(_("eTIMS Stock IO Error: {0}").format(e))
+			else:
+				return
+
+
+def get_customer_details(customer):
+	customer_kra_details = frappe.get_doc("Customer", customer)
+
+	cust_dict = {
+		"cust_pin": customer_kra_details.get("custom_customer_pin"),
+		"cust_name": customer_kra_details.get("custom_customer_name"),
+	}
+
+	return cust_dict
+
+
+def get_last_inv_number(doc, branch_id):
+
+	cur_number = 0
+	last_inv_no = 0
+
+	if doc.custom_update_invoice_in_tims:
+		# Serialize per-branch number allocation. Lock the branch's device row
+		# with FOR UPDATE so two concurrent submits cannot read the same max and
+		# assign a DUPLICATE eTIMS invoice number (KRA rejects duplicate invcNo).
+		# The lock is held until the allocating transaction commits — and there
+		# is NO intermediate commit between here and the set_value that writes
+		# the number — so the next allocator always sees the committed number.
+		if branch_id:
+			frappe.db.sql(
+				"SELECT name FROM `tabTIS Device Initialization` WHERE branch_id = %s FOR UPDATE",
+				branch_id,
+			)
+
+		settings_docs = frappe.db.get_all(
+			"TIS Device Initialization", filters={"branch_id": branch_id}, fields=["*"]
+		)
+
+		if settings_docs:
+			last_inv_no = settings_docs[0].get("last_sales_invoice_number") or 0
+
+		try:
+			last_inv = frappe.db.get_all(
+				doc.doctype,
+				filters={
+					"name": ["!=", doc.name],
+					"custom_update_invoice_in_tims": 1,
+					"custom_tax_branch_office": branch_id,
+				},
+				fields=["custom_invoice_number"],
+				order_by="custom_invoice_number desc",
+				page_length=1,
+			)
+
+			if last_inv and last_inv[0].get("custom_invoice_number"):
+				last_inv_no = max(last_inv_no or 0, last_inv[0].get("custom_invoice_number"))
+
+			cur_number = (last_inv_no or 0) + 1
+
+		except Exception as e:
+			frappe.log_error("eTIMS: Invoice number calculation error", str(e))
+			cur_number = (last_inv_no or 0) + 1
+
+	return cur_number
+
+
+def validate_inv_number(doc):
+	invoice_numbers = []
+	invoice_number_list = frappe.db.get_all(
+		"Sales Invoice", fields=["custom_invoice_number", "name"], order_by="custom_invoice_number desc"
+	)
+
+	if invoice_number_list:
+		for invoice_no in invoice_number_list:
+			if not invoice_no.get("name") == doc.name:
+				if invoice_no.get("custom_invoice_number") not in invoice_numbers:
+					invoice_numbers.append(invoice_no.get("custom_invoice_number"))
+
+	return invoice_numbers
+
+
+def etims_sale_item_list_sales(doc):
+	sales_item_list = []
+	for item in doc.items:
+		item_tax_code = get_tax_template_details(item.get("item_tax_template"))
+		item_detail = frappe.db.get_all(
+			"Item",
+			filters={"disabled": 0, "item_code": item.get("item_code")},
+			fields=[
+				"custom_item_code",
+				"custom_item_classification_code",
+				"custom_item_name",
+				"custom_packaging_unit_code",
+				"custom_quantity_unit_code",
+			],
+		)
+		if not item_detail:
+			frappe.throw(f"Item {item.get('item_code')} not found or is disabled")
+		item_etims_data = {
+			"itemSeq": item.get("idx"),
+			"itemCd": item_detail[0].get("custom_item_code"),
+			"itemClsCd": item_detail[0].get("custom_item_classification_code"),
+			"itemNm": item_detail[0].get("custom_item_name"),
+			# "bcd":null,
+			"pkgUnitCd": item_detail[0].get("custom_packaging_unit_code"),
+			"pkg": abs(item.get("qty")),
+			"qtyUnitCd": item_detail[0].get("custom_quantity_unit_code"),
+			"qty": abs(item.get("qty")),
+			"prc": abs(item.get("base_rate")),
+			"splyAmt": abs(item.get("base_amount")),
+			"dcRt": abs(item.get("discount_percentage")),
+			"dcAmt": abs(round((item.get("custom_discount_amount_kes") * item.get("qty")), 2)),
+			# "isrccCd":null,
+			# "isrccNm":null,
+			# "isrcRt":null,
+			# "isrcAmt":null,
+			"totDcAmt": abs(round((item.get("custom_discount_amount_kes") * item.get("qty")), 2)),
+			"taxTyCd": item_tax_code,
+			"taxblAmt": abs(round(item.get("base_net_amount"), 2)),
+			"taxAmt": abs(round((item.get("base_amount") - item.get("base_net_amount")), 2)),
+			"totAmt": abs(item.get("base_amount")),
+		}
+
+		if item_etims_data not in sales_item_list:
+			sales_item_list.append(item_etims_data)
+
+	return sales_item_list
+
+
+def etims_sale_item_list_stock(doc):
+	stock_item_list = []
+	for item in doc.items:
+		if item.custom_maintain_stock:
+			item_tax_code = get_tax_template_details(item.get("item_tax_template"))
+			item_detail = frappe.db.get_all(
+				"Item",
+				filters={"disabled": 0, "item_code": item.get("item_code")},
+				fields=[
+					"custom_item_code",
+					"custom_item_classification_code",
+					"custom_item_name",
+					"custom_packaging_unit_code",
+					"custom_quantity_unit_code",
+				],
+			)
+			if not item_detail:
+				frappe.throw(f"Item {item.get('item_code')} not found or is disabled")
+			item_etims_data = {
+				"itemSeq": item.get("idx"),
+				"itemCd": item_detail[0].get("custom_item_code"),
+				"itemClsCd": item_detail[0].get("custom_item_classification_code"),
+				"itemNm": item_detail[0].get("custom_item_name"),
+				"pkgUnitCd": item_detail[0].get("custom_packaging_unit_code"),
+				"pkg": item.get("qty"),
+				"qtyUnitCd": item_detail[0].get("custom_quantity_unit_code"),
+				"qty": abs(item.get("qty")),
+				"prc": abs(item.get("base_rate")),
+				"splyAmt": abs(item.get("base_amount")),
+				"dcRt": abs(item.get("discount_percentage")),
+				"dcAmt": abs(round((item.get("custom_discount_amount_kes") * item.get("qty")), 2)),
+				"totDcAmt": abs(round((item.get("custom_discount_amount_kes") * item.get("qty")), 2)),
+				"taxTyCd": item_tax_code,
+				"taxblAmt": abs(round(item.get("base_net_amount"), 2)),
+				"taxAmt": abs(round((item.get("base_amount") - item.get("base_net_amount")), 2)),
+				"totAmt": abs(item.get("base_amount")),
+			}
+
+			if item_etims_data not in stock_item_list:
+				stock_item_list.append(item_etims_data)
+
+	return stock_item_list
+
+
+def get_tax_template_details(template_name):
+	tax_doc = frappe.get_doc("Item Tax Template", template_name)
+	if tax_doc:
+		tax_code = tax_doc.custom_code
+
+		return tax_code
+	else:
+		return "D"
+
+
+def get_tax_account_rate(account_head):
+	tax_acc_docs = frappe.db.get_all("Account", filters={"name": account_head}, fields=["tax_rate"])
+
+	if tax_acc_docs:
+		tax_rate = tax_acc_docs[0].get("tax_rate")
+
+		return tax_rate
+
+
+def create_sales_receipt(data, doc_name):
+	control_unit_date_time = eTIMS.strp_datetime_object(data.get("sdcDateTime"))
+
+	new_rcpt_doc = frappe.new_doc("eTIMS Sales Receipt")
+	new_rcpt_doc.receipt_number = data.get("curRcptNo")
+	new_rcpt_doc.total_receipt_number = data.get("totRcptNo")
+	new_rcpt_doc.internal_data = data.get("intrlData")
+	new_rcpt_doc.receipt_signature = data.get("rcptSign")
+	new_rcpt_doc.control_unit_date_time = control_unit_date_time
+	new_rcpt_doc.reference = doc_name
+
+	new_rcpt_doc.insert()
+
+
+def create_qr_code(pin, branch_id, rcpt_signature):
+	"""Build the KRA receipt-verification URL and a QR PNG for it.
+
+	Always returns a ``(file_name, url)`` tuple so callers can unpack safely:
+	  * ``(file_name, url)`` — URL built and PNG saved.
+	  * ``(None, url)``       — URL built but the PNG could not be saved (the
+	                            thermal receipt still renders the QR from the URL
+	                            via ``escpos_qr``; only the A4 image attachment
+	                            is skipped).
+	  * ``(None, None)``      — no receipt signature or no active device, so no
+	                            verifiable URL can be built.
+
+	This function MUST NOT raise: it runs inside the eTIMS post-success handler
+	*after* the queue status is committed "Sent". A raised exception there would
+	abort the document save and silently drop the receipt signature and control
+	unit data — a compliance defect, not just a missing QR.
+	"""
+	if not rcpt_signature:
+		return None, None
+
+	header_docs = frappe.db.get_all(
+		"TIS Device Initialization", filters={"branch_id": branch_id, "active": 1}, fields=["api_mode"]
+	)
+	if not header_docs:
+		return None, None
+
+	host = (
+		"https://etims.kra.go.ke"
+		if header_docs[0].get("api_mode") == "Production"
+		else "https://etims-sbx.kra.go.ke"
+	)
+	url = f"{host}/common/link/etims/receipt/indexEtimsReceiptData?Data={pin}{branch_id}{rcpt_signature}"
+
+	file_name = rcpt_signature + ".png"
+	file_path = frappe.get_site_path("private", "files", file_name)
+	try:
+		segno.make_qr(url).save(file_path, scale=5)
+	except Exception:
+		# Keep the URL (thermal QR still works); only the PNG attachment is lost.
+		frappe.log_error("eTIMS: QR code PNG generation failed", frappe.get_traceback())
+		return None, url
+
+	return file_name, url
+
+
+def create_attachment(file_name, inv_name):
+	if not file_name:
+		return None
+	new_attachment = frappe.new_doc("File")
+	new_attachment.file_name = file_name
+	new_attachment.file_url = "/private/files/" + file_name
+	new_attachment.attached_to_doctype = "Sales Invoice"
+	new_attachment.attached_to_name = inv_name
+	new_attachment.is_private = 1
+
+	new_attachment.save()
+
+	return new_attachment.get("file_url")
+
+
+def sales_return_information(doc):
+	diff_amount = 0
+	return_status = ""
+
+	if doc.is_return:
+		if doc.return_against:
+			return_amount = doc.grand_total
+			return_against = frappe.get_doc("Sales Invoice", doc.return_against)
+			prev_return_amount = return_against.grand_total
+
+			diff_amount = prev_return_amount + return_amount
+
+		if diff_amount > 0:
+			return_status = "partial"
+		elif diff_amount == 0:
+			return_status = "full"
+		elif diff_amount < 0:
+			return_status = "null"
+
+	return return_status
+
+
+# ---------------------------------------------------------------------------
+# Manual signing of an already-submitted invoice
+#
+# Closes the gap where an invoice submitted with eTIMS signing disabled had no
+# built-in way to be signed afterwards. These functions are ADDITIVE — they do
+# not touch the working `before_submit` (trnsSalesSaveWrReq) path. The actual
+# transmission reuses the queue (enqueue_invoice -> process_queue_entry ->
+# _handle_sales_invoice_success), which already writes fiscal fields to a
+# submitted (docstatus=1) document safely.
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# VAT obligation enforcement
+# ---------------------------------------------------------------------------
+# A company with no VAT obligation (eTIMS Settings -> VAT Obligation =
+# "Not Registered") must never report VAT it is not registered to collect.
+# Two layers keep the booked invoice and the KRA payload consistent:
+#   1. enforce_vat_obligation (before_validate) removes the VAT-bearing Sales
+#      Taxes and Charges rows *before* ERPNext computes taxes, so no VAT is
+#      charged on the actual invoice. VAT lives in the tax rows (re-mapping the
+#      item tax template does NOT remove it — set_missing_values regenerates the
+#      per-item map), so the rows are the reliable lever. With VAT-inclusive
+#      pricing the gross total is preserved; with exclusive pricing the add-on
+#      VAT is dropped.
+#   2. _normalize_payload_non_vat (inside build_sales_payload) forces the KRA
+#      payload into a clean band-D structure, so a stray VAT band/line can
+#      never be transmitted.
+# ---------------------------------------------------------------------------
+
+
+def enforce_vat_obligation(doc, method):
+	"""before_validate: strip VAT from eTIMS-bound invoices for non-VAT companies.
+
+	Removes every VAT-bearing tax row (rate > 0) before tax calculation, so
+	ERPNext recomputes the invoice with no VAT charged. Idempotent: an invoice
+	that already carries no rated tax row is left untouched.
+	"""
+	# Cheap in-memory checks first; only read settings for eTIMS-bound invoices.
+	if not doc.get("custom_update_invoice_in_tims") or not doc.get("taxes"):
+		return
+	if get_etims_settings().get("vat_obligation") != "Not Registered":
+		return
+
+	vat_rows = [t for t in doc.taxes if flt(t.get("rate")) > 0]
+	if not vat_rows:
+		return
+
+	doc.set("taxes", [t for t in doc.taxes if flt(t.get("rate")) <= 0])
+
+	frappe.msgprint(
+		_(
+			"VAT Obligation is 'Not Registered': removed {0} VAT charge row(s) so no VAT "
+			"is charged or transmitted to KRA. With VAT-inclusive pricing the total is "
+			"unchanged; with VAT-exclusive pricing the VAT is dropped.<br>Accounts: {1}"
+		).format(len(vat_rows), ", ".join(t.account_head for t in vat_rows)),
+		title=_("VAT removed (Non-VAT company)"),
+		indicator="orange",
+	)
+
+
+def _normalize_payload_non_vat(payload):
+	"""Force a clean Non-VAT (D) structure on a KRA sales payload.
+
+	Folds the whole supply into band D at 0% and forces every line's taxTyCd to D
+	with zero tax — the transmission-boundary guarantee that complements the
+	before_validate conversion, so no stray VAT band/line can reach KRA.
+	"""
+	items = payload.get("itemList") or []
+	band_total = abs(round(sum(flt(li.get("taxblAmt")) for li in items), 2))
+
+	for code in KRA_TAX_BANDS:
+		payload[f"taxblAmt{code}"] = 0
+		payload[f"taxAmt{code}"] = 0
+		payload[f"taxRt{code}"] = 0
+	payload[f"taxblAmt{NON_VAT_CODE}"] = band_total
+	payload["totTaxblAmt"] = band_total
+	payload["totTaxAmt"] = 0
+
+	for li in items:
+		li["taxTyCd"] = NON_VAT_CODE
+		li["taxAmt"] = 0
+
+	return payload
+
+
+def build_sales_payload(doc):
+	"""Build the KRA save_sales payload for a Sales Invoice.
+
+	A standalone copy of the payload assembly used by trnsSalesSaveWrReq, so the
+	manual-sign path can run outside before_submit without altering the working
+	submit path. The A-E tax bands are aggregated per code (one pass, no
+	order dependence).
+	"""
+	conc_datetime_str = eTIMS.strf_datetime_format(doc.modified)
+	date_time_str = datetime.now().strftime("%Y%m%d%H%M%S")
+	date_str = eTIMS.strf_date_object(doc.posting_date)
+	count = doc.custom_item_count or len(doc.items) or 0
+	if count < 1:
+		frappe.throw(_("Sales Invoice must have at least one item to submit to eTIMS"))
+
+	payload = {
+		"trdInvcNo": doc.name,
+		"invcNo": doc.custom_invoice_number,
+		"orgInvcNo": doc.custom_original_invoice_number,
+		"custTin": doc.tax_id,
+		"custNm": doc.customer,
+		"salesTyCd": doc.custom_sales_type_code,
+		"rcptTyCd": doc.custom_receipt_type_code,
+		"pmtTyCd": doc.custom_payment_type_code,
+		"salesSttsCd": doc.custom_invoice_status_code,
+		"cfmDt": conc_datetime_str,
+		"salesDt": date_str,
+		"stockRlsDt": date_time_str,
+		"totItemCnt": count,
+		"totTaxblAmt": abs(doc.custom_total_taxable_amount or 0),
+		"totTaxAmt": abs(doc.base_total_taxes_and_charges or 0),
+		"totAmt": abs(doc.base_grand_total or 0),
+		"prchrAcptcYn": "N",
+		"remark": doc.remarks,
+		"regrId": (doc.owner or "")[:20],
+		"regrNm": (doc.owner or "")[:20],
+		"modrId": (doc.modified_by or "")[:20],
+		"modrNm": (doc.modified_by or "")[:20],
+		"receipt": {
+			"custTin": doc.tax_id,
+			"rcptPbctDt": date_time_str,
+			"prchrAcptcYn": "N",
+		},
+		"itemList": etims_sale_item_list_sales(doc),
+	}
+
+	# KRA tax bands A-E (shared, summed-per-band, null-guarded helper)
+	apply_tax_bands(payload, doc.taxes, get_tax_account_rate)
+
+	# Non-VAT company: force a clean band-D payload and assert no VAT survives.
+	if get_etims_settings().get("vat_obligation") == "Not Registered":
+		_normalize_payload_non_vat(payload)
+
+	if doc.is_return == 1:
+		return_status = sales_return_information(doc)
+		if return_status == "partial":
+			payload["rfdDt"] = date_time_str
+			payload["rfdRsnCd"] = doc.custom_credit_note_reason_code
+		elif return_status == "full":
+			payload["cnclReqDt"] = conc_datetime_str
+			payload["cnclDt"] = conc_datetime_str
+			payload["rfdDt"] = date_time_str
+			payload["rfdRsnCd"] = doc.custom_credit_note_reason_code
+		elif return_status == "null":
+			frappe.throw(_("Invalid, return amount is greater than original amount!"))
+
+	settings = get_etims_settings()
+	if settings.get("training_mode"):
+		payload["rcptTyCd"] = "T"
+
+	frappe.db.set_value(
+		"Sales Invoice", doc.name, "custom_receipt_label", get_receipt_label(doc), update_modified=False
+	)
+
+	return payload
+
+
+def prepare_etims_resign(doc):
+	"""Populate the eTIMS number and tax-band fields that were skipped because
+	the invoice was submitted with signing off.
+
+	Surgical: assigns the invoice number (if missing) and recomputes the tax
+	amounts/totals only. It deliberately does NOT replay the update_stock /
+	set_warehouse logic that insert_invoice_number runs at save time — the stock
+	ledger entries were already committed at submit and must not be re-derived.
+
+	Caller must set ``doc.custom_update_invoice_in_tims = 1`` first (the number
+	helpers are gated on that flag).
+	"""
+	branch_id = eTIMS.get_user_branch_id()
+
+	if not doc.custom_invoice_number:
+		scu = ""
+		init_docs = frappe.db.get_all(
+			"TIS Device Initialization",
+			filters={"branch_id": branch_id},
+			fields=["sales_control_unit_id"],
+		)
+		if init_docs:
+			scu = init_docs[0].get("sales_control_unit_id")
+
+		last_inv_number = get_last_inv_number(doc, branch_id)
+		frappe.db.set_value(
+			"Sales Invoice",
+			doc.name,
+			{
+				"custom_invoice_number": last_inv_number,
+				"custom_sales_control_unit": scu,
+				"custom_tax_branch_office": branch_id,
+			},
+			update_modified=False,
+		)
+		doc.custom_invoice_number = last_inv_number
+		doc.custom_sales_control_unit = scu
+		doc.custom_tax_branch_office = branch_id
+
+	# Recompute tax-band amounts on the tax rows and the document totals
+	insert_tax_amounts(doc)
+	total_vat_amount = fetch_total_vat(doc)
+	total_non_vat_amount = fetch_total_non_vat(doc)
+	total_discount_amount = get_total_discount(doc)
+	frappe.db.set_value(
+		"Sales Invoice",
+		doc.name,
+		{
+			"custom_total_taxable_amount": total_vat_amount,
+			"custom_total_nontaxable_amount": total_non_vat_amount,
+			"custom_total_discount_amount": total_discount_amount,
+		},
+		update_modified=False,
+	)
+	doc.custom_total_taxable_amount = total_vat_amount
+	doc.custom_total_nontaxable_amount = total_non_vat_amount
+	doc.custom_total_discount_amount = total_discount_amount
+
+
+@frappe.whitelist()
+def sign_submitted_invoice(invoice_name):
+	"""Sign a SUBMITTED Sales Invoice that was originally submitted with eTIMS
+	signing disabled (so no queue entry was ever created).
+
+	Late-signing caveat: this assigns a fresh eTIMS invoice number and records
+	the sale in eTIMS *now* (current submission window) while ERPNext still holds
+	it in its original posting period. If that period's VAT return is already
+	filed, prefer a credit note / reissue instead of signing late.
+	"""
+	doc = frappe.get_doc("Sales Invoice", invoice_name)
+	frappe.has_permission("Sales Invoice", "submit", doc=doc, throw=True)
+
+	if doc.docstatus != 1:
+		frappe.throw(_("Only a submitted invoice can be signed to eTIMS."))
+	if doc.custom_update_sales_to_etims:
+		frappe.throw(_("This invoice has already been signed to eTIMS."))
+	if doc.custom_etims_queue_status in ("Queued", "Processing"):
+		frappe.throw(
+			_("This invoice is already queued for eTIMS ({0}).").format(doc.custom_etims_queue_status)
+		)
+	if not doc.items:
+		frappe.throw(_("This invoice has no items to send to eTIMS."))
+
+	# Enable signing, then backfill the number + tax fields skipped at submit
+	doc.custom_update_invoice_in_tims = 1
+	frappe.db.set_value(
+		"Sales Invoice", doc.name, "custom_update_invoice_in_tims", 1, update_modified=False
+	)
+	prepare_etims_resign(doc)
+
+	payload = build_sales_payload(doc)
+
+	# Safety net: never enqueue a malformed payload for a taxed sale
+	if not payload.get("invcNo"):
+		frappe.throw(
+			_("Could not assign an eTIMS invoice number. Check TIS Device Initialization for your branch.")
+		)
+	bands = [payload.get(f"taxblAmt{c}") or 0 for c in ("A", "B", "C", "D", "E")]
+	if abs(doc.base_grand_total or 0) > 0 and not any(bands):
+		frappe.throw(
+			_(
+				"This invoice has no eTIMS tax breakdown — its items are missing Item Tax "
+				"Templates or KRA tax codes. Amend the invoice with proper eTIMS tax setup "
+				"before signing."
+			)
+		)
+
+	branch_id = None
+	try:
+		branch_id = KRAClient()._get_user_branch_id()
+	except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+		frappe.log_error("eTIMS: Failed to get branch ID for manual sign", str(e))
+
+	queue_name = enqueue_invoice(
+		doc=doc, payload=payload, api_endpoint="save_sales", branch_id=branch_id
+	)
+	return {"status": "queued", "queue_entry": queue_name, "invoice_number": payload.get("invcNo")}

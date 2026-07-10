@@ -1,0 +1,374 @@
+{
+ "actions": [],
+ "creation": "2024-02-03 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sb_general",
+  "default_sar_type_sales",
+  "default_sar_type_purchase",
+  "column_break_owpm",
+  "enable_auto_sync",
+  "default_sar_type_stock_entry",
+  "sb_role",
+  "enable_rbac",
+  "enforce_branch_isolation",
+  "column_break_vyys",
+  "allow_cross_branch_operations",
+  "sb_api",
+  "api_timeout",
+  "production_api_url",
+  "column_break_xwoa",
+  "sandbox_api_url",
+  "sb_retry",
+  "enable_retry_logic",
+  "max_retry_attempts",
+  "column_break_neqx",
+  "retry_delay",
+  "sb_search",
+  "default_search_limit",
+  "column_break_ienu",
+  "max_search_limit",
+  "sb_error",
+  "enable_error_logging",
+  "enable_permission_logging",
+  "column_break_rwal",
+  "error_notification_email",
+  "sb_compliance",
+  "enforce_invoice_verification",
+  "auto_verify_invoices",
+  "column_break_bpgc",
+  "allow_payment_unverified",
+  "sb_queue",
+  "enable_queue",
+  "queue_max_retries",
+  "queue_retry_interval",
+  "sb_training",
+  "training_mode",
+  "wait_for_etims_before_print",
+  "etims_print_wait_seconds",
+  "sb_vat_obligation",
+  "vat_obligation"
+ ],
+ "fields": [
+  {
+   "fieldname": "sb_general",
+   "fieldtype": "Section Break",
+   "label": "General Settings"
+  },
+  {
+   "default": "11",
+   "description": "Default Stock Release Number type for Sales transactions. 11=Sales, 02=Purchase, 03=Sales Return, 04=Stock Transfer In, 06=Material Receipt, 12=Purchase Return, 13=Inter-Branch Transfer Out",
+   "fieldname": "default_sar_type_sales",
+   "fieldtype": "Select",
+   "label": "Default SAR Type - Sales",
+   "options": "11\n02\n03\n04\n06\n12\n13"
+  },
+  {
+   "default": "02",
+   "description": "Default Stock Release Number type for Purchase transactions",
+   "fieldname": "default_sar_type_purchase",
+   "fieldtype": "Select",
+   "label": "Default SAR Type - Purchase",
+   "options": "11\n02\n03\n04\n06\n12\n13"
+  },
+  {
+   "default": "06",
+   "description": "Default Stock Release Number type for Stock Entry transactions",
+   "fieldname": "default_sar_type_stock_entry",
+   "fieldtype": "Select",
+   "label": "Default SAR Type - Stock Entry",
+   "options": "11\n02\n03\n04\n06\n12\n13"
+  },
+  {
+   "default": "1",
+   "description": "Automatically sync Stock Release Numbers to KRA on submit",
+   "fieldname": "enable_auto_sync",
+   "fieldtype": "Check",
+   "label": "Enable Auto Sync"
+  },
+  {
+   "fieldname": "sb_role",
+   "fieldtype": "Section Break",
+   "label": "Role Based Access Control"
+  },
+  {
+   "default": "1",
+   "description": "Enable Role-Based Access Control for eTIMS operations (recommended for production)",
+   "fieldname": "enable_rbac",
+   "fieldtype": "Check",
+   "label": "Enable RBAC"
+  },
+  {
+   "default": "1",
+   "description": "Users can only access documents from their assigned branch (Admin/Manager exempt)",
+   "fieldname": "enforce_branch_isolation",
+   "fieldtype": "Check",
+   "label": "Enforce Branch Isolation"
+  },
+  {
+   "default": "0",
+   "description": "Allow Managers to perform operations across all branches",
+   "fieldname": "allow_cross_branch_operations",
+   "fieldtype": "Check",
+   "label": "Allow Cross-Branch Operations"
+  },
+  {
+   "fieldname": "sb_api",
+   "fieldtype": "Section Break",
+   "label": "API Settings"
+  },
+  {
+   "default": "30",
+   "description": "Request timeout in seconds (default: 30, max: 300)",
+   "fieldname": "api_timeout",
+   "fieldtype": "Int",
+   "label": "API Timeout (seconds)"
+  },
+  {
+   "default": "https://etims-api.kra.go.ke/etims-api/",
+   "description": "KRA eTIMS Production API endpoint",
+   "fieldname": "production_api_url",
+   "fieldtype": "Data",
+   "label": "Production API URL"
+  },
+  {
+   "default": "https://etims-api-sbx.kra.go.ke/etims-api/",
+   "description": "KRA eTIMS Sandbox API endpoint",
+   "fieldname": "sandbox_api_url",
+   "fieldtype": "Data",
+   "label": "Sandbox API URL"
+  },
+  {
+   "fieldname": "sb_retry",
+   "fieldtype": "Section Break",
+   "label": "Retry Settings"
+  },
+  {
+   "default": "1",
+   "description": "Automatically retry failed API requests",
+   "fieldname": "enable_retry_logic",
+   "fieldtype": "Check",
+   "label": "Enable Retry Logic"
+  },
+  {
+   "default": "3",
+   "description": "Maximum number of retry attempts for failed requests (default: 3)",
+   "fieldname": "max_retry_attempts",
+   "fieldtype": "Int",
+   "label": "Max Retry Attempts"
+  },
+  {
+   "default": "2",
+   "description": "Delay between retry attempts in seconds (default: 2)",
+   "fieldname": "retry_delay",
+   "fieldtype": "Int",
+   "label": "Retry Delay (seconds)"
+  },
+  {
+   "fieldname": "sb_search",
+   "fieldtype": "Section Break",
+   "label": "Search Settings"
+  },
+  {
+   "default": "100",
+   "description": "Default number of results to return from search endpoints (default: 100)",
+   "fieldname": "default_search_limit",
+   "fieldtype": "Int",
+   "label": "Default Search Limit"
+  },
+  {
+   "default": "1000",
+   "description": "Maximum number of results allowed from search endpoints (default: 1000)",
+   "fieldname": "max_search_limit",
+   "fieldtype": "Int",
+   "label": "Max Search Limit"
+  },
+  {
+   "fieldname": "sb_error",
+   "fieldtype": "Section Break",
+   "label": "Error Handling"
+  },
+  {
+   "default": "1",
+   "description": "Log API errors to Error Logging doctype",
+   "fieldname": "enable_error_logging",
+   "fieldtype": "Check",
+   "label": "Enable Error Logging"
+  },
+  {
+   "default": "1",
+   "description": "Log all permission checks for audit trail",
+   "fieldname": "enable_permission_logging",
+   "fieldtype": "Check",
+   "label": "Enable Permission Logging"
+  },
+  {
+   "description": "Send error notifications to this email address (optional)",
+   "fieldname": "error_notification_email",
+   "fieldtype": "Data",
+   "label": "Error Notification Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "sb_compliance",
+   "fieldtype": "Section Break",
+   "label": "Purchase Compliance Settings (2026)"
+  },
+  {
+   "default": "1",
+   "description": "Require all supplier invoices to be verified with KRA before payment. Critical for 2026 tax compliance.",
+   "fieldname": "enforce_invoice_verification",
+   "fieldtype": "Check",
+   "label": "Enforce Invoice Verification"
+  },
+  {
+   "default": "0",
+   "description": "Automatically verify invoices when they are created (if supplier is registered in eTIMS)",
+   "fieldname": "auto_verify_invoices",
+   "fieldtype": "Check",
+   "label": "Auto-Verify Invoices"
+  },
+  {
+   "default": "0",
+   "description": "Allow payments for unverified invoices with approval (not recommended - may affect tax deductibility)",
+   "fieldname": "allow_payment_unverified",
+   "fieldtype": "Check",
+   "label": "Allow Payment Without Verification"
+  },
+  {
+   "fieldname": "column_break_owpm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_vyys",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_xwoa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_neqx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ienu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_rwal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_bpgc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sb_queue",
+   "fieldtype": "Section Break",
+   "label": "Invoice Queue Settings"
+  },
+  {
+   "default": "1",
+   "description": "Enable background queue for KRA API calls. When disabled, invoices are sent synchronously (original behavior).",
+   "fieldname": "enable_queue",
+   "fieldtype": "Check",
+   "label": "Enable Background Queue"
+  },
+  {
+   "default": "10",
+   "description": "Maximum retry attempts for failed queue entries (default: 10)",
+   "fieldname": "queue_max_retries",
+   "fieldtype": "Int",
+   "label": "Queue Max Retries"
+  },
+  {
+   "default": "5",
+   "description": "Minutes between retry checks for failed queue entries (default: 5)",
+   "fieldname": "queue_retry_interval",
+   "fieldtype": "Int",
+   "label": "Queue Retry Interval (minutes)"
+  },
+  {
+   "fieldname": "sb_training",
+   "fieldtype": "Section Break",
+   "label": "Training Mode (Spec 4.1.3)"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, all receipts are marked as TRAINING and are not official fiscal documents. Receipt type code is set to 'T'. Disable for production use.",
+   "fieldname": "training_mode",
+   "fieldtype": "Check",
+   "label": "Training Mode"
+  },
+  {
+   "default": "1",
+   "description": "POS waits briefly for KRA signing so the first receipt carries the QR. Turn off to print immediately.",
+   "fieldname": "wait_for_etims_before_print",
+   "fieldtype": "Check",
+   "label": "Wait for eTIMS before printing receipt"
+  },
+  {
+   "default": "6",
+   "depends_on": "wait_for_etims_before_print",
+   "fieldname": "etims_print_wait_seconds",
+   "fieldtype": "Int",
+   "label": "eTIMS print wait (seconds)"
+  },
+  {
+   "fieldname": "sb_vat_obligation",
+   "fieldtype": "Section Break",
+   "label": "VAT Obligation"
+  },
+  {
+   "default": "Registered",
+   "description": "Company's VAT registration status with KRA. When set to 'Not Registered', the app auto-converts any vatable (rated) line on eTIMS-bound sales invoices to Non-VAT (D) before transmission, so a non-VAT trader never reports VAT it is not obligated to collect.",
+   "fieldname": "vat_obligation",
+   "fieldtype": "Select",
+   "label": "VAT Obligation",
+   "options": "Registered\nNot Registered"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-03-28 10:13:49.764135",
+ "modified_by": "Administrator",
+ "module": "Kenya Etims Compliance",
+ "name": "eTIMS Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "eTIMS Administrator",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "eTIMS Auditor"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
