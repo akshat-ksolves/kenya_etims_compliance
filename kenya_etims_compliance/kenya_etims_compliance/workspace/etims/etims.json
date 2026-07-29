@@ -1,0 +1,568 @@
+{
+ "app": "kenya_etims_compliance",
+ "charts": [
+  {
+   "chart_name": "eTIMS Monthly Sales Transmission",
+   "label": "eTIMS Monthly Sales Transmission"
+  },
+  {
+   "chart_name": "eTIMS Purchase Transmission",
+   "label": "eTIMS Purchase Transmission"
+  },
+  {
+   "chart_name": "eTIMS Errors Trend",
+   "label": "eTIMS Errors Trend"
+  },
+  {
+   "chart_name": "eTIMS Queue Status",
+   "label": "eTIMS Queue Status"
+  },
+  {
+   "chart_name": "eTIMS Purchase Match Status",
+   "label": "eTIMS Purchase Match Status"
+  },
+  {
+   "chart_name": "eTIMS Sales Transmission Status",
+   "label": "eTIMS Sales Transmission Status"
+  }
+ ],
+ "content": "[{\"id\":\"etims_hdr_1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>eTIMS Compliance Overview</b></span>\",\"col\":12}},{\"id\":\"etims_nc_1\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Sales Transmitted\",\"col\":2}},{\"id\":\"etims_nc_2\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Sales Pending\",\"col\":2}},{\"id\":\"etims_nc_3\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Sales Success Rate (%)\",\"col\":2}},{\"id\":\"etims_nc_4\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Queue Failed\",\"col\":2}},{\"id\":\"etims_nc_5\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Purchases Matched\",\"col\":2}},{\"id\":\"etims_nc_6\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Purchases Unmatched\",\"col\":2}},{\"id\":\"etims_nc_7\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Input VAT at Risk\",\"col\":2}},{\"id\":\"etims_nc_8\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Suppliers Verified\",\"col\":2}},{\"id\":\"etims_nc_9\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Errors This Month\",\"col\":2}},{\"id\":\"etims_nc_10\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Queue Pending\",\"col\":2}},{\"id\":\"etims_nc_11\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Compliance Score\",\"col\":2}},{\"id\":\"etims_nc_12\",\"type\":\"number_card\",\"data\":{\"number_card_name\":\"Days to Filing Deadline\",\"col\":2}},{\"id\":\"etims_sp_1\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"etims_hdr_2\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Transmission & Reconciliation Trends</b></span>\",\"col\":12}},{\"id\":\"etims_ch_1\",\"type\":\"chart\",\"data\":{\"chart_name\":\"eTIMS Monthly Sales Transmission\",\"col\":6}},{\"id\":\"etims_ch_2\",\"type\":\"chart\",\"data\":{\"chart_name\":\"eTIMS Purchase Transmission\",\"col\":6}},{\"id\":\"etims_ch_3\",\"type\":\"chart\",\"data\":{\"chart_name\":\"eTIMS Queue Status\",\"col\":4}},{\"id\":\"etims_ch_4\",\"type\":\"chart\",\"data\":{\"chart_name\":\"eTIMS Purchase Match Status\",\"col\":4}},{\"id\":\"etims_ch_5\",\"type\":\"chart\",\"data\":{\"chart_name\":\"eTIMS Sales Transmission Status\",\"col\":4}},{\"id\":\"etims_sp_2\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"etims_hdr_3\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Quick Actions</b></span>\",\"col\":12}},{\"id\":\"etims_sc_1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"eTIMS Settings\",\"col\":3}},{\"id\":\"etims_sc_2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Invoice Queue\",\"col\":3}},{\"id\":\"etims_sc_3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Reconciliation\",\"col\":3}},{\"id\":\"etims_sc_4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Setup Wizard\",\"col\":3}},{\"id\":\"etims_sp_3\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"etims_hdr_4\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Navigation</b></span>\",\"col\":12}},{\"id\":\"etims_card_1\",\"type\":\"card\",\"data\":{\"card_name\":\"Masters\",\"col\":4}},{\"id\":\"etims_card_2\",\"type\":\"card\",\"data\":{\"card_name\":\"Transactions\",\"col\":4}},{\"id\":\"etims_card_3\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports\",\"col\":4}}]",
+ "creation": "2024-02-17 12:49:27.432630",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "etims",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "eTIMS",
+ "link_type": "DocType",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Masters",
+   "link_count": 0,
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Settings",
+   "link_count": 0,
+   "link_to": "eTIMS Settings",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "TIS Device Initialization",
+   "link_count": 0,
+   "link_to": "TIS Device Initialization",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "TIS Communication Key",
+   "link_count": 0,
+   "link_to": "TIS Communication Key",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tax Branch Office",
+   "link_count": 0,
+   "link_to": "Tax Branch Office",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Branch User",
+   "link_count": 0,
+   "link_to": "eTIMS Branch User",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Code Classification",
+   "link_count": 0,
+   "link_to": "eTIMS Code Classification",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Item Classification",
+   "link_count": 0,
+   "link_to": "eTIMS Item Classification",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Country",
+   "link_count": 0,
+   "link_to": "eTIMS Country",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Packing Unit",
+   "link_count": 0,
+   "link_to": "eTIMS Packing Unit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Quantity Unit",
+   "link_count": 0,
+   "link_to": "eTIMS Quantity Unit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Insurance",
+   "link_count": 0,
+   "link_to": "eTIMS Insurance",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Credit Note Reason",
+   "link_count": 0,
+   "link_to": "eTIMS Credit Note Reason",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Transactions",
+   "link_count": 0,
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Sales Receipt",
+   "link_count": 0,
+   "link_to": "eTIMS Sales Receipt",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Purchase Invoice",
+   "link_count": 0,
+   "link_to": "eTIMS Purchase Invoice",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Stock Movement",
+   "link_count": 0,
+   "link_to": "eTIMS Stock Movement",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Stock Release Number",
+   "link_count": 0,
+   "link_to": "eTIMS Stock Release Number",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Import Item",
+   "link_count": 0,
+   "link_to": "eTIMS Import Item",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Purchase Register Entry",
+   "link_count": 0,
+   "link_to": "eTIMS Purchase Register Entry",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Reconciliation Log",
+   "link_count": 0,
+   "link_to": "eTIMS Reconciliation Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Compliance Score",
+   "link_count": 0,
+   "link_to": "eTIMS Compliance Score",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Invoice Queue",
+   "link_count": 0,
+   "link_to": "eTIMS Invoice Queue",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Notice",
+   "link_count": 0,
+   "link_to": "eTIMS Notice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Error Logging",
+   "link_count": 0,
+   "link_to": "Error Logging",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Code Information",
+   "link_count": 0,
+   "link_to": "eTIMS Code Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Branch Information",
+   "link_count": 0,
+   "link_to": "eTIMS Branch Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Item Information",
+   "link_count": 0,
+   "link_to": "eTIMS Item Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Import Item Information",
+   "link_count": 0,
+   "link_to": "eTIMS Import Item Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Purchase Information",
+   "link_count": 0,
+   "link_to": "eTIMS Purchase Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "eTIMS Stock Information",
+   "link_count": 0,
+   "link_to": "eTIMS Stock Information",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Reports",
+   "link_count": 0,
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Income/Expense Validation",
+   "link_count": 0,
+   "link_to": "eTIMS Income Expense Validation",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Purchase Reconciliation",
+   "link_count": 0,
+   "link_to": "eTIMS Purchase Reconciliation",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "VAT Return Preview",
+   "link_count": 0,
+   "link_to": "eTIMS VAT Return Preview",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Stock Reconciliation",
+   "link_count": 0,
+   "link_to": "eTIMS Stock Reconciliation",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Supplier Compliance",
+   "link_count": 0,
+   "link_to": "eTIMS Supplier Compliance",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Payment Reconciliation",
+   "link_count": 0,
+   "link_to": "eTIMS Payment Reconciliation",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "X Daily Report",
+   "link_count": 0,
+   "link_to": "eTIMS X Daily Report",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Z Daily Report",
+   "link_count": 0,
+   "link_to": "eTIMS Z Daily Report",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "PLU Report",
+   "link_count": 0,
+   "link_to": "eTIMS PLU Report",
+   "link_type": "Report",
+   "onboard": 1,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-04 08:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Kenya Etims Compliance",
+ "name": "eTIMS",
+ "number_cards": [
+  {
+   "label": "Sales Transmitted",
+   "number_card_name": "Sales Transmitted"
+  },
+  {
+   "label": "Sales Pending",
+   "number_card_name": "Sales Pending"
+  },
+  {
+   "label": "Sales Success Rate (%)",
+   "number_card_name": "Sales Success Rate (%)"
+  },
+  {
+   "label": "Queue Failed",
+   "number_card_name": "Queue Failed"
+  },
+  {
+   "label": "Purchases Matched",
+   "number_card_name": "Purchases Matched"
+  },
+  {
+   "label": "Purchases Unmatched",
+   "number_card_name": "Purchases Unmatched"
+  },
+  {
+   "label": "Input VAT at Risk",
+   "number_card_name": "Input VAT at Risk"
+  },
+  {
+   "label": "Suppliers Verified",
+   "number_card_name": "Suppliers Verified"
+  },
+  {
+   "label": "Errors This Month",
+   "number_card_name": "Errors This Month"
+  },
+  {
+   "label": "Queue Pending",
+   "number_card_name": "Queue Pending"
+  },
+  {
+   "label": "Compliance Score",
+   "number_card_name": "Compliance Score"
+  },
+  {
+   "label": "Days to Filing Deadline",
+   "number_card_name": "Days to Filing Deadline"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "eTIMS Administrator"
+  },
+  {
+   "role": "eTIMS Manager"
+  },
+  {
+   "role": "eTIMS Operator"
+  },
+  {
+   "role": "eTIMS Auditor"
+  },
+  {
+   "role": "eTIMS Sales Clerk"
+  },
+  {
+   "role": "eTIMS Purchase Clerk"
+  },
+  {
+   "role": "eTIMS Store Keeper"
+  }
+ ],
+ "sequence_id": 10.0,
+ "shortcuts": [
+  {
+   "label": "eTIMS Settings",
+   "link_to": "eTIMS Settings",
+   "type": "DocType",
+   "doc_view": "",
+   "color": "#2490ef"
+  },
+  {
+   "label": "Invoice Queue",
+   "link_to": "eTIMS Invoice Queue",
+   "type": "DocType",
+   "doc_view": "",
+   "color": "#e74c3c"
+  },
+  {
+   "label": "Purchase Reconciliation",
+   "link_to": "eTIMS Purchase Reconciliation",
+   "type": "Report",
+   "is_query_report": 1,
+   "color": "#f39c12"
+  },
+  {
+   "label": "Setup Wizard",
+   "link_to": "etims-setup-wizard",
+   "type": "Page",
+   "color": "#2ecc71"
+  }
+ ],
+ "title": "eTIMS",
+ "type": "Workspace"
+}
