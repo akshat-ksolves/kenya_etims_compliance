@@ -149,6 +149,9 @@ class KRAClient:
 	def insert_stock_io(self, payload, reference_doctype=None, reference_name=None):
 		return self.post("insertStockIO", payload, reference_doctype, reference_name)
 
+	def save_stock_master(self, payload, reference_doctype=None, reference_name=None):
+		return self.post("saveStockMaster", payload, reference_doctype, reference_name)
+
 	def save_item(self, payload, reference_doctype=None, reference_name=None):
 		return self.post("saveItem", payload, reference_doctype, reference_name)
 
@@ -232,18 +235,35 @@ class KRAClient:
 	def _load_headers(self):
 		if not self.branch_id:
 			return {}
-		header_docs = frappe.db.get_all(
+		header_names = frappe.db.get_all(
 			"TIS Device Initialization",
 			filters={"branch_id": self.branch_id, "active": 1},
-			fields=["pin", "branch_id", "communication_key"],
+			pluck="name",
 		)
-		if header_docs:
-			return {
-				"tin": header_docs[0].get("pin"),
-				"bhfId": header_docs[0].get("branch_id"),
-				"cmcKey": header_docs[0].get("communication_key"),
-			}
-		return {}
+		if not header_names:
+			return {}
+		device = frappe.get_doc("TIS Device Initialization", header_names[0])
+
+		# Prefer the centralized TIS Communication Key record if it exists.
+		# Device-record keys can become stale when the key is re-issued or
+		# updated outside the device record, leaving API calls rejected with
+		# "It is not valid device" (KRA result code 901).
+		ck = device.get_password("communication_key", raise_exception=False)
+		ck_doc_name = frappe.db.get_value(
+			"TIS Communication Key", {"branch_id": self.branch_id}, "name"
+		)
+		if ck_doc_name:
+			ck_from_record = frappe.get_doc(
+				"TIS Communication Key", ck_doc_name
+			).get_password("communication_key", raise_exception=False)
+			if ck_from_record:
+				ck = ck_from_record
+
+		return {
+			"tin": device.get_password("pin", raise_exception=False),
+			"bhfId": device.branch_id,
+			"cmcKey": ck,
+		}
 
 	def _get_base_url(self):
 		from kenya_etims_compliance.kenya_etims_compliance.doctype.etims_settings.etims_settings import (

@@ -58,6 +58,7 @@ doctype_js = {
 # include js in doctype views
 doctype_list_js = {
 	"Item": "custom_methods/item_list.js",
+	"eTIMS Invoice Queue": "custom_methods/etims_invoice_queue_list.js",
 }
 
 # Svg Icons
@@ -95,7 +96,6 @@ jinja = {
 # Installation
 # ------------
 
-before_install = "kenya_etims_compliance.installation.etims_roles.before_install"
 after_install = "kenya_etims_compliance.installation.after_install.after_install"
 after_migrate = [
 	"kenya_etims_compliance.custom_methods.install_queue_fields.install_queue_fields",
@@ -165,6 +165,7 @@ doc_events = {
 			"kenya_etims_compliance.custom_methods.bin.on_submit",
 			"kenya_etims_compliance.custom_methods.sales_invoice.show_etims_queued_message",
 		],
+		"on_cancel": "kenya_etims_compliance.custom_methods.sales_invoice.on_cancel",
 	},
 	"Stock Entry": {
 		"before_submit": "kenya_etims_compliance.custom_methods.stock.update_stock_to_etims",
@@ -177,8 +178,8 @@ doc_events = {
 		"before_save": "kenya_etims_compliance.custom_methods.purchase_invoice.validate",
 		"before_submit": "kenya_etims_compliance.custom_methods.purchase_invoice.trnsPurchaseSaveReq",
 		"on_update": "kenya_etims_compliance.custom_methods.purchase_invoice.insert_invoice_number",
-		"on_change": "kenya_etims_compliance.custom_methods.purchase_invoice.add_taxes",
 		"on_submit": "kenya_etims_compliance.custom_methods.bin.on_submit",
+		"on_cancel": "kenya_etims_compliance.custom_methods.purchase_invoice.on_cancel",
 	},
 	# Phase 1: Invoice Checker API Integration - Payment Validation
 	"Payment Entry": {
@@ -199,22 +200,39 @@ scheduler_events = {
 		"*/5 * * * *": ["kenya_etims_compliance.custom_methods.queue_processor.retry_failed_invoices"],
 		# Per TIS spec §21.8: pull pending KRA purchase records every 15 min
 		"*/15 * * * *": ["kenya_etims_compliance.tasks.fetch_purchase_transactions"],
+		# A queue row can settle on "Sent" while its Sales Invoice never got the
+		# SCU signature/QR, because post-success work is deliberately swallowed
+		# rather than re-POSTed (a retry would duplicate the fiscal receipt).
+		# Replay that work hourly from the stored response — never hits KRA.
+		"0 * * * *": ["kenya_etims_compliance.custom_methods.queue_processor.repair_sent_without_signature"],
 	},
 	"daily": [
 		"kenya_etims_compliance.tasks.fetch_kra_notices",
 		"kenya_etims_compliance.tasks.run_reconciliation_task",
 		"kenya_etims_compliance.tasks.fetch_import_items",
 		"kenya_etims_compliance.tasks.send_deadline_reminders",
+		# HIGH (Jobs/scheduler): prune terminal queue rows so the table does
+		# not grow one row per invoice forever (it is polled four times per
+		# scheduler tick on unindexed status/next_retry_at columns).
+		"kenya_etims_compliance.custom_methods.queue_processor.cleanup_terminal_queue_entries",
 	],
-	"weekly": [
+	# HIGH (Jobs/scheduler): both queue-running jobs here can need well over
+	# the 300s short-queue timeout (KRA calls can take ~94s each; 100
+	# sequential supplier verifications needs >2h). Put them on the long
+	# queue so scheduler self-overlap gating still works (background_jobs
+	# counts QUEUED + STARTED) and they are not killed by the short timeout.
+	"weekly_long": [
 		"kenya_etims_compliance.tasks.verify_supplier_pins",
-		"kenya_etims_compliance.tasks.calculate_supplier_scores",
 	],
 	"monthly": [
 		"kenya_etims_compliance.tasks.generate_compliance_score",
 	],
 }
-
+# Note: ``process_queue_entry`` and ``verify_supplier_pins`` enqueue themselves
+# onto the ``long`` queue from inside the task body — the scheduler only
+# triggers the entry point. Frappe's ``ScheduledJobType.enqueue`` self-overlap
+# gate (``is_job_enqueued``) counts QUEUED + STARTED jobs, so moving the
+# enqueue call into a long-queue background job still gives us dedupe.
 # Testing
 # -------
 

@@ -19,19 +19,19 @@ class eTIMS:
 				branch_id = devices[0].get("branch_id")
 		if not branch_id:
 			return None
-		header_docs = frappe.db.get_all(
+		header_names = frappe.db.get_all(
 			"TIS Device Initialization",
 			filters={"branch_id": branch_id, "active": 1},
-			fields=["pin", "branch_id", "communication_key"],
+			pluck="name",
 		)
-
-		if header_docs:
-			return {
-				"tin": header_docs[0].get("pin"),
-				"bhfId": header_docs[0].get("branch_id"),
-				"cmcKey": header_docs[0].get("communication_key"),
-			}
-
+		if not header_names:
+			return {}
+		device = frappe.get_doc("TIS Device Initialization", header_names[0])
+		return {
+			"tin": device.get_password("pin", raise_exception=False),
+			"bhfId": device.branch_id,
+			"cmcKey": device.get_password("communication_key", raise_exception=False),
+		}
 	@staticmethod
 	def get_base_url():
 		base_url = frappe.utils.get_url()
@@ -40,28 +40,19 @@ class eTIMS:
 
 	@staticmethod
 	def strf_datetime_object(datetime_data):
-		datetime_object = datetime.strptime(datetime_data, "%Y-%m-%d %H:%M:%S")
-		date_time_str = datetime_object.strftime("%Y%m%d%H%M%S")
-
-		return date_time_str
+		"""Format a datetime as YYYYMMDDHHMMSS. Supports ISO strings and datetime objects."""
+		return eTIMS.strf_datetime_format(datetime_data)
 
 	@staticmethod
 	def strf_datetime_format(datetime_data):
-		date_time_str = ""
-		if isinstance(datetime_data, str):
-			try:
-				datetime_object = datetime.strptime(datetime_data, "%Y-%m-%d %H:%M:%S.%f")
-				date_time_str = datetime_object.strftime("%Y%m%d%H%M%S")
-
-			except ValueError as e:
-				frappe.log_error(title="eTIMS: Datetime format error", message=str(e))
-				datetime_object = datetime.strptime(datetime_data, "%Y-%m-%d %H:%M:%S")
-				date_time_str = datetime_object.strftime("%Y%m%d%H%M%S")
-
-		else:
-			date_time_str = datetime_data.strftime("%Y%m%d%H%M%S")
-
-		return date_time_str
+		"""Format a datetime as YYYYMMDDHHMMSS. Supports ISO strings and datetime objects."""
+		if not datetime_data:
+			return ""
+		try:
+			return frappe.utils.get_datetime(datetime_data).strftime("%Y%m%d%H%M%S")
+		except Exception as e:
+			frappe.log_error(title="eTIMS: Datetime format error", message=str(e))
+			raise
 
 	@staticmethod
 	def strf_date_object(date_data):

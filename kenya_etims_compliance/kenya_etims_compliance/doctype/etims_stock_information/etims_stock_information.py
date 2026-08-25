@@ -23,7 +23,10 @@ class eTIMSStockInformation(Document):
 			)
 
 		request_datetime = self.from_date_and_time
-		date_time_str = eTIMS.strf_datetime_object(request_datetime)
+		if not request_datetime:
+			frappe.throw(_("Set 'From Date and Time' before searching."), frappe.ValidationError)
+
+		date_time_str = frappe.utils.get_datetime(request_datetime).strftime("%Y%m%d%H%M%S")
 
 		payload = {
 			"lastReqDt": date_time_str,
@@ -121,22 +124,22 @@ class eTIMSStockInformation(Document):
 
 
 def get_bin_qty(item_code):
-	tax_branch = eTIMS.get_user_branch_id()
+	from kenya_etims_compliance.custom_methods.bin import resolve_stores_warehouse
 
-	store_warehouse = frappe.db.get_all(
-		"Warehouse",
-		filters={"warehouse_type": "Stores", "is_group": 0, "custom_tax_branch_office": tax_branch},
-		fields=["warehouse_name", "name"],
-	)
+	warehouse_name = resolve_stores_warehouse()
+	if not warehouse_name:
+		return 0
 
 	bin_docs = frappe.db.get_all(
 		"Bin",
-		filters={"item_code": item_code, "warehouse": store_warehouse[0].get("name")},
+		filters={"item_code": item_code, "warehouse": warehouse_name},
 		fields=["actual_qty"],
 	)
 
 	if bin_docs:
 		return bin_docs[0].get("actual_qty")
+
+	return 0
 
 
 def create_stock_mvnt_doc(response_result):
